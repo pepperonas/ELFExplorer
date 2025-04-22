@@ -116,4 +116,4 @@ Contributions are welcome! If you find bugs or want to suggest new features:
 
 ---
 
-*Built for reverse engineers, security analysts, and developers seeking deep insights into ELF files.
+*Built for reverse engineers, security analysts, and developers seeking deep insights into ELF files.*
