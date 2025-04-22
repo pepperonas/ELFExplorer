@@ -1,6 +1,10 @@
 # ELFExplorer
 
-ELFExplorer is a Python tool for detailed analysis of ELF (Executable and Linkable Format) files, particularly `.so` files (Shared Libraries) commonly used in Android/ARM libraries. It provides features such as ELF header analysis, section overview, symbol table inspection, dynamic dependencies, JNI structure extraction, string extraction, and disassembly (if Capstone is installed). The tool is ideal for reverse engineering, security analysis, and debugging native libraries.
+ELFExplorer is a Python tool for detailed analysis of ELF (Executable and Linkable Format) files, particularly `.so`
+files (Shared Libraries) commonly used in Android/ARM libraries. It provides features such as ELF header analysis,
+section overview, symbol table inspection, dynamic dependencies, JNI structure extraction, string extraction, and
+disassembly (if Capstone is installed). The tool is ideal for reverse engineering, security analysis, and debugging
+native libraries.
 
 ## Features
 
@@ -10,15 +14,16 @@ ELFExplorer is a Python tool for detailed analysis of ELF (Executable and Linkab
 - **Symbol Table**: Lists symbols (functions, variables) with a focus on JNI symbols.
 - **JNI Class Structure**: Extracts and organizes JNI methods and classes from symbol names.
 - **String Extraction**: Extracts readable strings, categorized by Java/JNI, Android, paths, and functions.
-- **Disassembly**: Disassembles the `.text` section for supported architectures (ARM, x86, x86_64, AArch64) if Capstone is available.
+- **Disassembly**: Disassembles the `.text` section for supported architectures (ARM, x86, x86_64, AArch64) if Capstone
+  is available.
 
 ## Requirements
 
 - **Python**: Version 3.6 or higher
 - **Operating System**: Linux, macOS, or Windows
 - **Dependencies**:
-  - `pyelftools>=0.29`: For ELF file analysis
-  - `capstone>=4.0.2`: For disassembly (optional)
+    - `pyelftools>=0.29`: For ELF file analysis
+    - `capstone>=4.0.2`: For disassembly (optional)
 
 ## Installation
 
@@ -85,7 +90,8 @@ The script outputs a detailed analysis to the console, including:
 
 ### Note
 
-If Capstone is not installed, disassembly will be skipped, and a notice will be displayed. Install Capstone with `pip install capstone` to enable this feature.
+If Capstone is not installed, disassembly will be skipped, and a notice will be displayed. Install Capstone with
+`pip install capstone` to enable this feature.
 
 ## Supported Architectures
 
@@ -107,14 +113,6 @@ Contributions are welcome! If you find bugs or want to suggest new features:
 
 1. Create an issue in the repository.
 2. Submit a pull request with your changes.
-
-## License
-
-This project is licensed under the MIT License (unless otherwise specified).
-
-## Contact
-
-For questions or support, contact the developer via \[GitHub Issues\](/issues).
 
 ---
 
