@@ -1,0 +1,3 @@
+# run pip install -r requirements.txt
+pyelftools>=0.29
+capstone>=4.0.2
