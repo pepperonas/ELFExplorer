@@ -118,4 +118,4 @@ For questions or support, contact the developer via \[GitHub Issues\](/issues).
 
 ---
 
-*Built for reverse engineers, security analysts, and developers seeking deep insights into ELF files.*
+*Built for reverse engineers, security analysts, and developers seeking deep insights into ELF files.
