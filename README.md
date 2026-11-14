@@ -107,6 +107,25 @@ Other architectures will trigger a warning that they are not supported.
 - Large `.so` files may result in longer analysis times.
 - Some architectures or specific ELF formats may not be fully supported.
 
+## Tests
+
+33 unit tests run against a tiny ELF64 shared object that the test suite
+builds byte by byte (`tests/elf_builder.py`: `.text`, `.dynamic` with
+`DT_NEEDED`/`DT_SONAME`, `.symtab` with JNI symbols) — no compiler and no
+sample binaries needed. They cover header, section, dynamic and symbol output,
+JNI demangling according to the JNI spec (`_1` → `_`, `_2` → `;`, `_3` → `[`,
+`_0xxxx` → Unicode, `__` before the argument signature of overloaded
+methods), string extraction and categorisation, and x86-64 disassembly
+including the instruction limit.
+
+```bash
+python3 -m venv .venv-test
+.venv-test/bin/pip install -r requirements-dev.txt
+.venv-test/bin/python -m pytest -q tests
+```
+
+GitHub Actions runs the suite on every push (`.github/workflows/tests.yml`).
+
 ## Contributing
 
 Contributions are welcome! If you find bugs or want to suggest new features:

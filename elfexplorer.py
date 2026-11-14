@@ -16,6 +16,9 @@ import struct
 
 try:
     from capstone import *
+    # Capstone 6 benennt ARM64 in AARCH64 um
+    if 'CS_ARCH_ARM64' not in globals() and 'CS_ARCH_AARCH64' in globals():
+        CS_ARCH_ARM64 = CS_ARCH_AARCH64
     CAPSTONE_AVAILABLE = True
 except ImportError:
     CAPSTONE_AVAILABLE = False
@@ -127,40 +130,130 @@ def analyze_symbols(elf):
     return jni_symbols, other_symbols
 
 
+def _jni_unescape(part):
+    """Löst die JNI-Escapes in einem Namensteil auf (_1 '_', _2 ';', _3 '[', _0xxxx Unicode)."""
+    out = []
+    i = 0
+    while i < len(part):
+        c = part[i]
+        if c == '_' and i + 1 < len(part):
+            nxt = part[i + 1]
+            if nxt == '1':
+                out.append('_')
+                i += 2
+                continue
+            if nxt == '2':
+                out.append(';')
+                i += 2
+                continue
+            if nxt == '3':
+                out.append('[')
+                i += 2
+                continue
+            if nxt == '0' and i + 6 <= len(part) and re.fullmatch(r'[0-9a-fA-F]{4}', part[i + 2:i + 6]):
+                out.append(chr(int(part[i + 2:i + 6], 16)))
+                i += 6
+                continue
+        if c == '_':
+            out.append('/')
+        else:
+            out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def parse_jni_symbol(name):
+    """
+    Zerlegt einen JNI-Symbolnamen nach der JNI-Spezifikation.
+
+    Java_<klasse>_<methode>[__<signatur>] mit '_' als Paket-/Klassen-Trenner und
+    den Escapes _1 ('_'), _2 (';'), _3 ('['), _0xxxx (Unicode).
+
+    Returns:
+        (klasse, methode, signatur) mit Punkt-Notation für die Klasse und der
+        Argument-Signatur (oder None), bzw. None wenn kein JNI-Symbol.
+    """
+    if not name.startswith('Java_'):
+        return None
+    body = name[len('Java_'):]
+
+    # Überladene Methoden: "__" trennt die Argument-Signatur ab. Ein Escape
+    # wie "_1" kann nie direkt auf ein "_" folgen, "__" ist also eindeutig.
+    signature = None
+    if '__' in body:
+        body, signature = body.split('__', 1)
+        signature = _jni_unescape(signature)
+
+    decoded = _jni_unescape(body)
+    if '/' not in decoded:
+        return None
+    class_path, method = decoded.rsplit('/', 1)
+    if not class_path or not method:
+        return None
+    return class_path.replace('/', '.'), method, signature
+
+
+def group_jni_methods(jni_symbols):
+    """Gruppiert JNI-Symbole nach Klasse: {klasse: [{'method', 'signature', 'address', 'size'}]}"""
+    class_methods = {}
+    for symbol in jni_symbols:
+        parsed = parse_jni_symbol(symbol.name)
+        if parsed is None:
+            continue
+        class_name, method_name, signature = parsed
+        class_methods.setdefault(class_name, []).append({
+            'method': method_name,
+            'signature': signature,
+            'address': symbol['st_value'],
+            'size': symbol['st_size']
+        })
+    return class_methods
+
+
 def extract_jni_info(jni_symbols):
     """Extrahiert JNI-Klasseninformationen aus Symbolnamen"""
     print_section_header("JNI-Klassenstruktur")
 
-    class_methods = {}
-
-    for symbol in jni_symbols:
-        name_parts = symbol.name.split('_')
-
-        if len(name_parts) < 3:
-            continue
-
-        # Format: Java_package_class_method
-        # Ignoriere den ersten Teil "Java"
-        package_class_parts = name_parts[1:-1]  # Alles zwischen "Java" und Methodenname
-        method_name = name_parts[-1]
-
-        # Rekonstruiere den Klassennamen mit Punktnotation
-        class_name = '.'.join(package_class_parts)
-
-        if class_name not in class_methods:
-            class_methods[class_name] = []
-
-        class_methods[class_name].append({
-            'method': method_name,
-            'address': symbol['st_value'],
-            'size': symbol['st_size']
-        })
+    class_methods = group_jni_methods(jni_symbols)
 
     # Ausgabe der Klassenstruktur im hierarchischen Format
     for class_name, methods in class_methods.items():
         print(f"Klasse: {class_name}")
         for method in methods:
-            print(f"  └─ {method['method']}: 0x{method['address']:x} (Größe: {method['size']} Bytes)")
+            sig = f"({method['signature']})" if method['signature'] is not None else ""
+            print(f"  └─ {method['method']}{sig}: 0x{method['address']:x} (Größe: {method['size']} Bytes)")
+
+    return class_methods
+
+
+def find_strings(data, min_length=4):
+    """
+    Findet alle Folgen druckbarer ASCII-Zeichen (32-126) mit mindestens
+    min_length Zeichen, wie `strings`. Auch eine Zeichenkette ganz am
+    Dateiende wird erfasst.
+    """
+    if min_length < 1:
+        raise ValueError("min_length muss mindestens 1 sein")
+    pattern = re.compile(rb'[\x20-\x7e]{%d,}' % min_length)
+    return [m.group().decode('ascii') for m in pattern.finditer(data)]
+
+
+def categorize_strings(strings_found):
+    """Sortiert Zeichenketten in die Kategorien java, android, path, function, other."""
+    categories = {'java': [], 'android': [], 'path': [], 'function': [], 'other': []}
+    for s in strings_found:
+        lower = s.lower()
+        if "java" in lower or "jni" in lower:
+            categories['java'].append(s)
+        elif "android" in lower:
+            categories['android'].append(s)
+        elif "/" in s:
+            categories['path'].append(s)
+        elif "(" in s and ")" in s:  # Mögliche Funktionssignaturen
+            categories['function'].append(s)
+        else:
+            categories['other'].append(s)
+    return categories
 
 
 def extract_strings(filepath, min_length=4):
@@ -170,35 +263,11 @@ def extract_strings(filepath, min_length=4):
     with open(filepath, 'rb') as f:
         content = f.read()
 
-    strings_found = []
-    current_string = b""
-
-    for byte in content:
-        if 32 <= byte <= 126:  # ASCII druckbare Zeichen
-            current_string += bytes([byte])
-        else:
-            if len(current_string) >= min_length:
-                strings_found.append(current_string.decode('ascii', errors='ignore'))
-            current_string = b""
-
-    # Nach Kategorien sortieren
-    java_strings = []
-    android_strings = []
-    path_strings = []
-    function_strings = []
-    other_strings = []
-
-    for s in strings_found:
-        if "java" in s.lower() or "jni" in s.lower():
-            java_strings.append(s)
-        elif "android" in s.lower():
-            android_strings.append(s)
-        elif "/" in s:
-            path_strings.append(s)
-        elif "(" in s and ")" in s:  # Mögliche Funktionssignaturen
-            function_strings.append(s)
-        else:
-            other_strings.append(s)
+    categories = categorize_strings(find_strings(content, min_length))
+    java_strings = categories['java']
+    android_strings = categories['android']
+    path_strings = categories['path']
+    function_strings = categories['function']
 
     # Spezifische Strings nach Kategorie ausgeben
     if java_strings:
@@ -324,10 +393,13 @@ def analyze_so(filepath):
         return 1
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(f"Nutzung: {sys.argv[0]} <pfad_zur_so_datei>")
-        sys.exit(1)
+def main(argv=None):
+    argv = sys.argv if argv is None else argv
+    if len(argv) != 2:
+        print(f"Nutzung: {argv[0]} <pfad_zur_so_datei>")
+        return 1
+    return analyze_so(argv[1])
 
-    so_path = sys.argv[1]
-    sys.exit(analyze_so(so_path))
+
+if __name__ == "__main__":
+    sys.exit(main())
